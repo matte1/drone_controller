@@ -11,13 +11,13 @@ import roslib;
 import rospy
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Empty
-#from leap_motion.msg import leapros
+from leap_motion.msg import leapros
 
 class DroneController():
     def __init__(self):
 
         # Subscribes to the leapros msg
-        #rospy.Subscriber("leapmotion/data", leapros, leapCallBack)
+        rospy.Subscriber("leapmotion/data", leapros, leapCallBack)
 
         # Empty Message commands
         self.pubLand = rospy.Publisher('ardrone/land', Empty)
@@ -58,10 +58,72 @@ class DroneController():
     def hover(self):
         self.pubTwist.publish(self.command_hover)
 
-    def leapCallBack(self, leapros):
-        self.command.linear.x = leapros.ypr.y
-        self.command.linear.y = leapros.ypr.z
-        self.command.linear.z = leapros.ypr.x
+def leapCallBack(leapros):
+    max_speed = .5
+    min_speed = -.5
+    dead_band = .1
+    lastX = 0
+    lastY = 0
+    lastZ = 0
+
+    pubCommand = rospy.Publisher('ardrone/cmd_vel', Twist)
+
+    command = Twist()
+    command.linear.x = leapros.normal.z
+    command.linear.y = leapros.normal.x
+    command.linear.z = ((leapros.palmpos.y-200)/450.0)
+
+    ''' SET DEAD BAND '''
+    if abs(command.linear.x) < dead_band:
+        command.linear.x = 0
+
+    if abs(command.linear.y) < dead_band:
+        command.linear.y = 0
+
+    if abs(command.linear.z) < dead_band:
+        command.linear.z = 0
+
+    ''' SPEED CONTROL '''
+    if command.linear.x > 0:
+        command.linear.x = min(command.linear.x, max_speed)
+    else:
+        command.linear.x = max(command.linear.x, min_speed)
+
+    if command.linear.y > 0:
+        command.linear.y = min(command.linear.y, max_speed)
+    else:
+        command.linear.y = max(command.linear.y, min_speed)
+
+    if command.linear.z > 0:
+        command.linear.z = min(command.linear.z, max_speed)
+    else:
+        command.linear.z = max(command.linear.z, min_speed)
+
+    ''' LAST VALUE CHECK '''
+    if leapros.normal.z == lastX:
+        command.linear.x = 0
+    if leapros.normal.x == lastY:
+        command.linear.y = 0
+    if leapros.palmpos.z == lastZ:
+        command.linear.z = 0
+
+    pubCommand.publish(command)
+
+    lastX = leapros.normal.z
+    lastY = leapros.normal.x
+    lastZ = leapros.palmpos.z
+
+    print("Commands")
+    print( command.linear.x);
+    print(command.linear.y);
+    print(command.linear.z);
+    print ""
+
+
+
+def listener():
+    rospy.Subscriber("leapros/data", leapros, leapCallBack)
+
 
 def main():
 
@@ -69,6 +131,7 @@ def main():
     rospy.init_node("drone_controller")
 
     drone = DroneController()
+    listener()
 
     # Get start time
     start = rospy.get_time()
